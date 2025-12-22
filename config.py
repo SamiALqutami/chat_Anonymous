@@ -8,7 +8,7 @@ import os
 from datetime import timedelta
 
 # 🔐 التوكنات والمفاتيح
-BOT_TOKEN = "8221859242:AAHrIxpZW4RVCcb32NGFXgfRPLkQo4Pzzbg"
+BOT_TOKEN = "8221859242:AAHi8U0LTKsonpZFEvQl7s52sgl33HJfS8o"
 STARS_PROVIDER_TOKEN = "284685063:TEST:YzZmZjMxNWE5ZGIz"  # TEST token للنجوم
 
 # 👑 المشرفين
