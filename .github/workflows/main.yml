@@ -1,12 +1,11 @@
-name: Continuous Python Bot
+name: Continuous Python Bot with MongoDB
 
 on:
   push:
     branches: [ "main" ]
-  # الحيلة هنا: إعادة التشغيل التلقائي
   schedule:
-    - cron: '0 */4 * * *'  # يعمل تلقائياً كل 4 ساعات (قبل مهلة الـ 6 ساعات)
-  workflow_dispatch:      # للسماح بالتشغيل اليدوي
+    - cron: '0 */4 * * *'  # إعادة تشغيل تلقائي كل 4 ساعات لضمان بقاء البوت حياً
+  workflow_dispatch:      # للسماح لك بتشغيله يدوياً في أي وقت
 
 jobs:
   build:
@@ -20,19 +19,21 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip' # ميزة لتسريع تثبيت المكتبات في كل مرة
 
       - name: Install Dependencies
         run: |
           pip install python-telegram-bot --upgrade
-          # أضف هنا أي مكتبات أخرى يحتاجها bot_main.py
-          # pip install ... 
+          pip install pymongo dnspython  # تثبيت مكتبات الاتصال بـ MongoDB
 
       - name: Run Bot
         env:
-          # تمرير المتغيرات من الأسرار (Secrets) التي أضفتها
+          # الأسرار (Secrets) التي يجب أن تكون في إعدادات GitHub
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           STARS_PROVIDER_TOKEN: ${{ secrets.STARS_PROVIDER_TOKEN }}
         run: |
-          # تشغيل البوت مع تحديد مهلة زمنية (Timeout) لتجنب الفشل المفاجئ
-          timeout 5h 50m python run_bot.py || echo "Restarting soon..."
+          # تشغيل البوت مع مهلة زمنية 5 ساعات و 50 دقيقة
+          # هذا يسمح للبوت بالإغلاق بهدوء قبل أن يطرده GitHub (بعد 6 ساعات)
+          timeout 5h 50m python run_bot.py || echo "Restarting soon in next schedule..."
