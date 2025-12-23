@@ -1,39 +1,30 @@
-name: Continuous Python Bot with MongoDB
+name: Unstoppable Bot 24/7
 
 on:
   push:
     branches: [ "main" ]
   schedule:
-    - cron: '0 */4 * * *'  # إعادة تشغيل تلقائي كل 4 ساعات لضمان بقاء البوت حياً
-  workflow_dispatch:      # للسماح لك بتشغيله يدوياً في أي وقت
+    - cron: '*/30 * * * *'  # محاولة تفقد كل 30 دقيقة (سيعرف GitHub أن البوت يعمل ولن يشغل نسخة ثانية)
+  workflow_dispatch:
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip' # ميزة لتسريع تثبيت المكتبات في كل مرة
+          cache: 'pip'
 
-      - name: Install Dependencies
-        run: |
-          pip install python-telegram-bot --upgrade
-          pip install pymongo dnspython  # تثبيت مكتبات الاتصال بـ MongoDB
+      - name: Install
+        run: pip install python-telegram-bot pymongo dnspython
 
-      - name: Run Bot
+      - name: Persistent Run
         env:
-          # الأسرار (Secrets) التي يجب أن تكون في إعدادات GitHub
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
-          OWNER_ID: ${{ secrets.OWNER_ID }}
-          STARS_PROVIDER_TOKEN: ${{ secrets.STARS_PROVIDER_TOKEN }}
         run: |
-          # تشغيل البوت مع مهلة زمنية 5 ساعات و 50 دقيقة
-          # هذا يسمح للبوت بالإغلاق بهدوء قبل أن يطرده GitHub (بعد 6 ساعات)
-          timeout 5h 50m python run_bot.py || echo "Restarting soon in next schedule..."
+          # الحيلة: البوت سيعمل لمدة 5 ساعات و 50 دقيقة ثم يغلق نفسه بكود نجاح
+          # هذا يمنع تعليق الجلسة ويضمن تشغيل الـ cron التالي
+          timeout 21000s python run_bot.py || echo "Restarting for stability..."
