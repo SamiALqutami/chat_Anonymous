@@ -5,6 +5,7 @@ from pymongo import MongoClient
 
 class Database:
     def __init__(self, db_path=None):
+        # جلب الرابط من جيت هاب
         self.uri = os.getenv('MONGO_URI')
         
         if not self.uri:
@@ -12,25 +13,31 @@ class Database:
             return
 
         try:
-            # إعداد سياق SSL مخصص لتجاوز تعارض الإصدارات
-            context = ssl.create_default_context(cafile=certifi.where())
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE # هذا السطر سيحل مشكلة الـ Alert Internal Error
-
+            # استخدام مكتبة certifi لتوفير شهادات موثوقة
+            # هذا يحل مشكلة الـ SSL في بيئة GitHub Actions
             self.client = MongoClient(
                 self.uri,
                 tls=True,
-                tlsContext=context,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=10000
+                tlsCAFile=certifi.where(),
+                tlsAllowInvalidCertificates=True, # لتجاوز أي تعارض في البروتوكولات
+                serverSelectionTimeoutMS=5000
             )
             
-            # فحص الاتصال
+            # اختبار الاتصال
             self.client.admin.command('ping')
-            self.db = self.client['DBchat']
-            self.users = self.db['users']
-            print("✅ تم اختراق حاجز SSL والاتصال بنجاح!")
+            
+            # تحديد قاعدة البيانات والمجموعات
+            self.db = self.client.get_database("DBchat")
+            self.users = self.db.get_collection("users")
+            
+            print("✅ تم الاتصال بنجاح تام بالقاعدة السحابية!")
             
         except Exception as e:
-            print(f"❌ فشل الاتصال النهائي: {e}")
+            print(f"❌ خطأ في الاتصال: {e}")
             raise e
+
+    def get_user(self, user_id):
+        return self.users.find_one({"user_id": user_id})
+
+    def set_user_status(self, user_id, status):
+        self.users.update_one({"user_id": user_id}, {"$set": {"status": status}}, upsert=True)
