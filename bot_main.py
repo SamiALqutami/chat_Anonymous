@@ -1,9 +1,9 @@
-
 import os
 import time
 import random
 import asyncio
 import logging
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
@@ -11,27 +11,49 @@ from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardR
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler, PreCheckoutQueryHandler
 from telegram.error import TelegramError
 
-# استيراد الملفات المحدثة
+# --- استيراد الملفات المحدثة (تأكد من وجودها في المستودع) ---
 from database import Database
 from games import GameManager, create_xo_keyboard, calculate_game_rewards
 from config import get_config
 from stars_payment import TelegramStarsPaymentSystem, StarsKeyboards
 
-# الحصول على الإعدادات
+# --- إعداد السجلات (Logging) ---
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# --- تهيئة قاعدة البيانات السحابية (MongoDB) ---
+try:
+    # سيقوم الكلاس في database.py بالتحقق من MONGO_URI
+    db = Database()
+    logger.info("✅ تم ربط عقل البوت بقاعدة البيانات السحابية بنجاح.")
+except Exception as e:
+    logger.error(f"❌ فشل بدء تشغيل البوت: {e}")
+    sys.exit(1) # إيقاف البوت فوراً لأن القاعدة الخارجية غير متصلة
+
+# --- الحصول على الإعدادات ---
 config = get_config()
 
-TOKEN = config['bot_token']
+# ملاحظة: تم حذف DB_PATH تماماً لأننا نستخدم MongoDB الآن
+TOKEN = os.getenv('BOT_TOKEN') or config['bot_token']
 OWNER_ID = config['owner_id']
 ADMIN_IDS = config['admin_ids']
 MANDATORY_CHANNEL = config['mandatory_channel']
 MONITOR_CHANNEL = config['monitor_channel']
 DATA_CHANNEL = config['data_channel']
-DB_PATH = config['db_path']
-REWARD_POINTS = config['reward_points']
-REWARD_COOLDOWN = config['reward_cooldown']
-GENDER_SEARCH_COST = config['gender_search_cost']
-GENDER_CHANGE_COST = config['gender_change_cost']
-FILTERED_WORDS = config['filtered_words']
+
+# إعدادات المكافآت والأسعار (تُجلب من السحاب أو Config)
+REWARD_POINTS = config.get('reward_points', 10)
+REWARD_COOLDOWN = config.get('reward_cooldown', 86400)
+GENDER_SEARCH_COST = config.get('gender_search_cost', 5)
+GENDER_CHANGE_COST = config.get('gender_change_cost', 50)
+FILTERED_WORDS = config.get('filtered_words', [])
+
+# --- تهيئة الأنظمة الفرعية ---
+game_manager = GameManager(db)
+payment_system = TelegramStarsPaymentSystem(db)
 
 # ----------------------------------------
 
