@@ -1,9 +1,9 @@
-name: Bot Ultimate Integration 24/7
+name: Bot_Cloud_Permanent_24_7
 
 on:
   schedule:
-    - cron: '*/30 * * * *' # محاولة تشغيل كل 30 دقيقة لضمان عدم التوقف
-  workflow_dispatch: # للتشغيل اليدوي في أي وقت
+    - cron: '*/30 * * * *' # محاولة إعادة التشغيل كل 30 دقيقة لضمان الاستمرارية
+  workflow_dispatch: # للتشغيل اليدوي
 
 jobs:
   run-bot:
@@ -12,24 +12,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install All Dependencies
+      - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install python-telegram-bot pymongo dnspython requests
-          # إذا كان لديك مكتبات إضافية في requirements.txt سيتم تثبيتها هنا
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Execute Bot Strategy
+      - name: Run Integrated Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          # سنستخدم نظام الـ 25 دقيقة (Restart Cycle)
-          # هذا النظام يضمن أن البوت يغلق نفسه بسلام قبل أن يقتله جيت هاب
-          # وبما أن البيانات في MongoDB، لن تشعر بأي انقطاع
-          timeout 1500s python bot_main.py || echo "Safe Restart Initiated"
+          # يعمل البوت لمدة 1500 ثانية (25 دقيقة) ثم يغلق نفسه بنجاح
+          # وبما أن البيانات في MongoDB، سيستأنف العمل من حيث توقف
+          timeout 1500s python bot_main.py || echo "Safe cycle restart initiated..."
