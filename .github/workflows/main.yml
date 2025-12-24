@@ -1,30 +1,35 @@
-name: Unstoppable Bot 24/7
+name: Bot Ultimate Integration 24/7
 
 on:
-  push:
-    branches: [ "main" ]
   schedule:
-    - cron: '*/30 * * * *'  # محاولة تفقد كل 30 دقيقة (سيعرف GitHub أن البوت يعمل ولن يشغل نسخة ثانية)
-  workflow_dispatch:
+    - cron: '*/30 * * * *' # محاولة تشغيل كل 30 دقيقة لضمان عدم التوقف
+  workflow_dispatch: # للتشغيل اليدوي في أي وقت
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'
 
-      - name: Install
-        run: pip install python-telegram-bot pymongo dnspython
+      - name: Install All Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-telegram-bot pymongo dnspython requests
+          # إذا كان لديك مكتبات إضافية في requirements.txt سيتم تثبيتها هنا
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Persistent Run
+      - name: Execute Bot Strategy
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          # الحيلة: البوت سيعمل لمدة 5 ساعات و 50 دقيقة ثم يغلق نفسه بكود نجاح
-          # هذا يمنع تعليق الجلسة ويضمن تشغيل الـ cron التالي
-          timeout 21000s python run_bot.py || echo "Restarting for stability..."
+          # سنستخدم نظام الـ 25 دقيقة (Restart Cycle)
+          # هذا النظام يضمن أن البوت يغلق نفسه بسلام قبل أن يقتله جيت هاب
+          # وبما أن البيانات في MongoDB، لن تشعر بأي انقطاع
+          timeout 1500s python bot_main.py || echo "Safe Restart Initiated"
