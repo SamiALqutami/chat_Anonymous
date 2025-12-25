@@ -1,43 +1,48 @@
 import os
-import ssl
-import certifi
-from pymongo import MongoClient
+import requests
+import json
+import base64
 
 class Database:
     def __init__(self, db_path=None):
-        # جلب الرابط من جيت هاب
-        self.uri = os.getenv('MONGO_URI')
-        
-        if not self.uri:
-            print("❌ MONGO_URI missing")
-            return
+        self.token = os.getenv('GH_TOKEN')
+        self.repo = os.getenv('DATA_REPO')
+        self.file_path = os.getenv('DB_FILE', 'db.json')
+        self.url = f"https://api.github.com/repos/{self.repo}/contents/{self.file_path}"
+        self.headers = {
+            "Authorization": f"token {self.token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
 
-        try:
-            # استخدام مكتبة certifi لتوفير شهادات موثوقة
-            # هذا يحل مشكلة الـ SSL في بيئة GitHub Actions
-            self.client = MongoClient(
-                self.uri,
-                tls=True,
-                tlsCAFile=certifi.where(),
-                tlsAllowInvalidCertificates=True, # لتجاوز أي تعارض في البروتوكولات
-                serverSelectionTimeoutMS=5000
-            )
-            
-            # اختبار الاتصال
-            self.client.admin.command('ping')
-            
-            # تحديد قاعدة البيانات والمجموعات
-            self.db = self.client.get_database("DBchat")
-            self.users = self.db.get_collection("users")
-            
-            print("✅ تم الاتصال بنجاح تام بالقاعدة السحابية!")
-            
-        except Exception as e:
-            print(f"❌ خطأ في الاتصال: {e}")
-            raise e
+    def _get_raw_data(self):
+        """جلب البيانات والـ SHA (الرقم التسلسلي للملف)"""
+        response = requests.get(self.url, headers=self.headers)
+        if response.status_code == 200:
+            content = response.json()
+            decoded_data = base64.b64decode(content['content']).decode('utf-8')
+            return json.loads(decoded_data), content['sha']
+        return {"users": {}}, None
 
     def get_user(self, user_id):
-        return self.users.find_one({"user_id": user_id})
+        """جلب بيانات مستخدم"""
+        data, _ = self._get_raw_data()
+        return data.get("users", {}).get(str(user_id))
 
-    def set_user_status(self, user_id, status):
-        self.users.update_one({"user_id": user_id}, {"$set": {"status": status}}, upsert=True)
+    def update_user_points(self, user_id, new_points):
+        """مثال لتحديث النقاط فقط"""
+        all_data, sha = self._get_raw_data()
+        if str(user_id) in all_data["users"]:
+            all_data["users"][str(user_id)]["points"] = new_points
+            
+            # تحويل البيانات إلى نص ثم تشفيرها للحفظ
+            updated_json = json.dumps(all_data, indent=4, ensure_ascii=False)
+            encoded_content = base64.b64encode(updated_json.encode('utf-8')).decode('utf-8')
+            
+            payload = {
+                "message": f"تحديث نقاط المستخدم {user_id}",
+                "content": encoded_content,
+                "sha": sha
+            }
+            res = requests.put(self.url, headers=self.headers, json=payload)
+            return res.status_code in [200, 201]
+        return False
