@@ -1,0 +1,43 @@
+name: Telegram Bot Cloud Runner
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # إضافة صلاحيات الكتابة للمستودع
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install python-telegram-bot requests httpx
+
+      - name: Run Bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          DATA_REPO: ${{ secrets.DATA_REPO }}
+          DB_FILE: "db.json"
+        run: |
+          echo "🔍 فحص المتغيرات..."
+          if [ -z "$DATA_REPO" ]; then
+            echo "⚠️ تحذير: DATA_REPO غير موجود في Secrets، سأحاول استخدامه يدوياً"
+            # يمكنك كتابة اسم المستودع هنا مباشرة كحل أخير إذا فشل الـ Secret
+            export DATA_REPO="SamiALqutami/SQL_Chat"
+          fi
+          
+          echo "🚀 تشغيل البوت للمستودع: $DATA_REPO"
+          python bot_main.py
