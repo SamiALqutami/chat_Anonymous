@@ -16,108 +16,102 @@ class Database:
             if res.status_code == 200:
                 content = res.json()
                 return json.loads(base64.b64decode(content['content']).decode('utf-8')), content['sha']
-            return {"users": {}, "stats": {"total_chats": 0}}, None
-        except: return {"users": {}, "stats": {}}, None
+            return {"users": {}, "logs": [], "stats": {"total_chats": 0}}, None
+        except: return {"users": {}, "logs": [], "stats": {}}, None
 
-    def _save(self, data, sha, msg="Sync"):
+    def _save(self, data, sha, msg="Admin Action"):
         try:
             content = base64.b64encode(json.dumps(data, indent=4, ensure_ascii=False).encode('utf-8')).decode('utf-8')
             res = requests.put(self.url, headers=self.headers, json={"message": msg, "content": content, "sha": sha}, timeout=15)
             return res.status_code in [200, 201]
         except: return False
 
-    # --- إدارة المستخدمين (تطابق كامل مع SQL) ---
-    def create_user(self, info):
-        data, sha = self._get_raw_data()
-        uid = str(info.get("user_id"))
-        if uid not in data["users"]:
-            ref_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-            data["users"][uid] = {
-                "user_id": int(uid), "username": info.get("username", ""),
-                "first_name": info.get("first_name", ""), "last_name": info.get("last_name", ""),
-                "points": 50, "stars_balance": 0, "status": "idle", "gender": "غير محدد",
-                "age": "غير محدد", "country": "غير محدد", "bio": "", "vip_until": 0,
-                "vip_level": 0, "vip_title": "", "total_chats": 0, "join_ts": int(time.time()),
-                "referral_code": ref_code, "last_reward_ts": 0, "partner": None,
-                "rating_sum": 0, "total_ratings": 0
-            }
-            self._save(data, sha, f"New User {uid}")
-        return data["users"][uid]
+    # --- البحث عبر اسم المستخدم (للوحة التحكم) ---
+    def get_user_by_username(self, username):
+        data, _ = self._get_raw_data()
+        username = username.replace("@", "").strip()
+        for u in data["users"].values():
+            if u.get("username") == username:
+                return u
+        return None
 
+    # --- نظام الحظر والـ VIP ---
+    def ban_user(self, identifier, until_ts):
+        data, sha = self._get_raw_data()
+        user = self.get_user_by_username(identifier) if isinstance(identifier, str) else data["users"].get(str(identifier))
+        if user:
+            uid = str(user["user_id"])
+            data["users"][uid]["banned_until"] = until_ts
+            self._save(data, sha, f"Ban User {uid}")
+            return True
+        return False
+
+    def set_vip_all(self, days):
+        data, sha = self._get_raw_data()
+        until = int(time.time()) + (days * 86400)
+        for uid in data["users"]:
+            data["users"][uid]["vip_until"] = until
+        self._save(data, sha, "VIP for ALL")
+
+    def add_points_all(self, points):
+        data, sha = self._get_raw_data()
+        for uid in data["users"]:
+            data["users"][uid]["points"] += points
+        self._save(data, sha, f"Points {points} for ALL")
+
+    # --- نظام البحث المتطور وإظهار البيانات ---
     def get_user(self, user_id):
         data, _ = self._get_raw_data()
-        return data["users"].get(str(user_id))
+        u = data["users"].get(str(user_id))
+        if u: # حساب التقييم تلقائياً
+            u['avg_rating'] = round(u.get('rating_sum', 0) / max(u.get('total_ratings', 1), 1), 1)
+            u['is_vip'] = u.get('vip_until', 0) > time.time()
+        return u
+
+    def list_active_conversations(self):
+        data, _ = self._get_raw_data()
+        return [{"user_a": int(k), "user_b": v["partner"]} for k, v in data["users"].items() if v.get("status") == "chatting" and v.get("partner")]
 
     def list_all_users(self):
         data, _ = self._get_raw_data()
         return list(data["users"].values())
 
-    def update_user_profile(self, user_id, updates):
-        data, sha = self._get_raw_data()
-        uid = str(user_id)
-        if uid in data["users"]:
-            data["users"][uid].update(updates)
-            self._save(data, sha)
-
-    # --- المحادثات والبحث (إصلاح خطأ list_active_conversations) ---
-    def set_user_status(self, user_id, status, partner=None):
-        data, sha = self._get_raw_data()
-        uid = str(user_id)
-        if uid in data["users"]:
-            data["users"][uid]["status"] = status
-            data["users"][uid]["partner"] = partner
-            if status == "chatting":
-                data["users"][uid]["total_chats"] += 1
-            self._save(data, sha)
-
-    def list_active_conversations(self):
-        data, _ = self._get_raw_data()
-        active = []
-        for uid, u in data["users"].items():
-            if u.get("status") == "chatting" and u.get("partner"):
-                # لتجنب التكرار (الشريكين)
-                if int(uid) < int(u["partner"]):
-                    active.append({"user_a": int(uid), "user_b": u["partner"]})
-        return active
-
-    def find_available_partner(self, exclude_id):
-        data, _ = self._get_raw_data()
-        pool = [u for k, u in data["users"].items() if k != str(exclude_id) and u.get("status") == "searching"]
-        return random.choice(pool) if pool else None
-
-    # --- الإحصائيات والمتصدرين ---
-    def get_stats(self):
-        data, _ = self._get_raw_data()
-        u = data.get("users", {})
-        return {
-            "total_users": len(u),
-            "active_users": sum(1 for v in u.values() if v.get("status") == "chatting"),
-            "searching_users": sum(1 for v in u.values() if v.get("status") == "searching"),
-            "vip_users": sum(1 for v in u.values() if v.get("vip_until", 0) > time.time()),
-            "total_points": sum(v.get("points", 0) for v in u.values()),
-            "male_users": sum(1 for v in u.values() if v.get("gender") == "ذكر"),
-            "female_users": sum(1 for v in u.values() if v.get("gender") == "أنثى")
-        }
-
     def get_leaderboard(self, limit=10):
         data, _ = self._get_raw_data()
-        users = list(data.get("users", {}).values())
+        users = list(data["users"].values())
         return sorted(users, key=lambda x: x.get('points', 0), reverse=True)[:limit]
 
-    # --- وظائف VIP والجوائز ---
-    def get_vip_status(self, user_id):
-        user = self.get_user(user_id)
-        if not user: return {"is_vip": False}
-        is_vip = user.get("vip_until", 0) > time.time()
-        return {"is_vip": is_vip, "days_left": (user["vip_until"] - time.time()) // 86400 if is_vip else 0}
-
-    def add_points(self, user_id, points):
+    # --- السجلات (Monitoring) ---
+    def add_log(self, action):
         data, sha = self._get_raw_data()
-        uid = str(user_id)
-        if uid in data["users"]:
-            data["users"][uid]["points"] += points
-            self._save(data, sha)
+        log_entry = f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {action}"
+        if "logs" not in data: data["logs"] = []
+        data["logs"].insert(0, log_entry)
+        data["logs"] = data["logs"][:100] # حفظ آخر 100 سجل فقط
+        self._save(data, sha)
 
+    # دالة إنشاء المستخدم مع التأكد من وجود كل الحقول
+    def create_user(self, info):
+        data, sha = self._get_raw_data()
+        uid = str(info.get("user_id"))
+        if uid not in data["users"]:
+            data["users"][uid] = {
+                "user_id": int(uid), "username": info.get("username", ""),
+                "first_name": info.get("first_name", ""), "points": 50,
+                "status": "idle", "gender": "غير محدد", "age": "غير محدد",
+                "country": "غير محدد", "vip_until": 0, "rating_sum": 0, "total_ratings": 0,
+                "partner": None, "join_ts": int(time.time())
+            }
+            self._save(data, sha)
+        return data["users"][uid]
+
+    def set_user_status(self, user_id, status, partner=None):
+        data, sha = self._get_raw_data()
+        if str(user_id) in data["users"]:
+            data["users"][str(user_id)]["status"] = status
+            data["users"][str(user_id)]["partner"] = partner
+            self._save(data, sha)
+            
     def consume_points(self, user_id, points):
         data, sha = self._get_raw_data()
         uid = str(user_id)
@@ -126,6 +120,9 @@ class Database:
             self._save(data, sha)
             return True
         return False
-
-    def optimize_database(self): return True
+        
+    def find_available_partner(self, exclude_id):
+        data, _ = self._get_raw_data()
+        pool = [u for k, u in data["users"].items() if k != str(exclude_id) and u.get("status") == "searching"]
+        return random.choice(pool) if pool else None
  
