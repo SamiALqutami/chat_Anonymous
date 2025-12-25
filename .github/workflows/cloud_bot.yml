@@ -3,48 +3,38 @@ name: Telegram Bot Cloud Runner
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
-
-# منع تشغيل أكثر من نسخة للبوت في نفس الوقت
-concurrency:
-  group: telegram-bot-group
-  cancel-in-progress: true
+  workflow_dispatch: # يسمح لك بتشغيل البوت يدوياً
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
-    
+
     steps:
-      # ✅ سحب الكود
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # ✅ إعداد Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # ✅ تثبيت المكتبات
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install python-telegram-bot requests certifi dnspython || true
+          pip install python-telegram-bot requests httpx
 
-      # ✅ التحقق من وجود جميع Secrets
-      - name: Validate Secrets
-        run: |
-          if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN غير مضبوط"; exit 1; fi
-          if [ -z "${{ secrets.GH_TOKEN }}" ]; then echo "❌ GH_TOKEN غير مضبوط"; exit 1; fi
-          if [ -z "${{ secrets.DATA_REPO }}" ]; then echo "❌ DATA_REPO غير مضبوط"; exit 1; fi
-          if [ -z "${{ secrets.DB_FILE }}" ]; then echo "❌ DB_FILE غير مضبوط"; exit 1; fi
-
-      # ✅ تشغيل البوت
-      - name: Run Telegram Bot
+      - name: Run Bot
         env:
+          # تأكد من إضافة هذه الأسماء في Settings -> Secrets -> Actions
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           DATA_REPO: ${{ secrets.DATA_REPO }}
-          DB_FILE: ${{ secrets.DB_FILE }}
-        run: python bot_main.py
+          DB_FILE: "db.json"
+        run: |
+          # التحقق من وجود المتغيرات قبل التشغيل لتجنب أخطاء السجلات
+          if [ -z "$BOT_TOKEN" ]; then echo "❌ BOT_TOKEN is missing"; exit 1; fi
+          if [ -z "$GH_TOKEN" ]; then echo "❌ GH_TOKEN is missing"; exit 1; fi
+          if [ -z "$DATA_REPO" ]; then echo "❌ DATA_REPO is missing"; exit 1; fi
+          
+          echo "🚀 بدء تشغيل البوت..."
+          python bot_main.py
