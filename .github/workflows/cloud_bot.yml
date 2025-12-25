@@ -32,13 +32,13 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install python-telegram-bot requests certifi dnspython || true
 
-      # ✅ التحقق من وجود Secrets
+      # ✅ التحقق من وجود جميع Secrets
       - name: Validate Secrets
         run: |
-          if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN not set"; exit 1; fi
-          if [ -z "${{ secrets.GH_TOKEN }}" ]; then echo "❌ GH_TOKEN not set"; exit 1; fi
-          if [ -z "${{ secrets.DATA_REPO }}" ]; then echo "❌ DATA_REPO not set"; exit 1; fi
-          if [ -z "${{ secrets.DB_FILE }}" ]; then echo "❌ DB_FILE not set"; exit 1; fi
+          if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN غير مضبوط"; exit 1; fi
+          if [ -z "${{ secrets.GH_TOKEN }}" ]; then echo "❌ GH_TOKEN غير مضبوط"; exit 1; fi
+          if [ -z "${{ secrets.DATA_REPO }}" ]; then echo "❌ DATA_REPO غير مضبوط"; exit 1; fi
+          if [ -z "${{ secrets.DB_FILE }}" ]; then echo "❌ DB_FILE غير مضبوط"; exit 1; fi
 
       # ✅ تشغيل البوت
       - name: Run Telegram Bot
@@ -47,4 +47,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           DATA_REPO: ${{ secrets.DATA_REPO }}
           DB_FILE: ${{ secrets.DB_FILE }}
-        run: python bot_main.py 
+        run: python bot_main.py
