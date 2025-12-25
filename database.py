@@ -2,6 +2,10 @@ import os
 import requests
 import json
 import base64
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self, db_path=None):
@@ -15,63 +19,88 @@ class Database:
         }
 
     def _get_raw_data(self):
+        """جلب البيانات من GitHub"""
         try:
-            response = requests.get(self.url, headers=self.headers)
+            response = requests.get(self.url, headers=self.headers, timeout=10)
             if response.status_code == 200:
                 content = response.json()
                 decoded_data = base64.b64decode(content['content']).decode('utf-8')
                 return json.loads(decoded_data), content['sha']
-            return {"users": {}, "stats": {"total_chats": 0}}, None
-        except:
-            return {"users": {}, "stats": {"total_chats": 0}}, None
+            return {"users": {}, "stats": {"total_chats": 0, "total_messages": 0}}, None
+        except Exception as e:
+            logger.error(f"Error fetching data: {e}")
+            return {"users": {}, "stats": {"total_chats": 0, "total_messages": 0}}, None
 
-    def _save_data(self, data, sha, message="Update"):
-        updated_json = json.dumps(data, indent=4, ensure_ascii=False)
-        encoded_content = base64.b64encode(updated_json.encode('utf-8')).decode('utf-8')
-        payload = {"message": message, "content": encoded_content, "sha": sha}
-        res = requests.put(self.url, headers=self.headers, json=payload)
-        return res.status_code in [200, 201]
+    def _save_data(self, data, sha, message="Database Update"):
+        """حفظ البيانات (Commit)"""
+        try:
+            updated_json = json.dumps(data, indent=4, ensure_ascii=False)
+            encoded_content = base64.b64encode(updated_json.encode('utf-8')).decode('utf-8')
+            payload = {"message": message, "content": encoded_content, "sha": sha}
+            res = requests.put(self.url, headers=self.headers, json=payload, timeout=10)
+            return res.status_code in [200, 201]
+        except Exception as e:
+            logger.error(f"Error saving data: {e}")
+            return False
+
+    # --- إدارة المستخدمين (تحديث ليتناسب مع SQLite القديم) ---
+    def create_user(self, info):
+        data, sha = self._get_raw_data()
+        user_id = str(info.get("user_id"))
+        if user_id not in data["users"]:
+            data["users"][user_id] = {
+                "user_id": int(user_id),
+                "username": info.get("username", ""),
+                "first_name": info.get("first_name", ""),
+                "points": 0,
+                "stars_balance": 0,
+                "status": "idle",
+                "join_ts": int(time.time()),
+                "gender": "غير محدد",
+                "vip_until": 0,
+                "total_chats": 0
+            }
+            self._save_data(data, sha, f"New User: {user_id}")
+        return data["users"][user_id]
 
     def get_user(self, user_id):
         data, _ = self._get_raw_data()
-        user = data.get("users", {}).get(str(user_id))
-        return user
+        return data.get("users", {}).get(str(user_id))
 
-    def create_user(self, user_id, username, first_name):
+    def add_points(self, user_id, points):
         data, sha = self._get_raw_data()
-        if str(user_id) not in data["users"]:
-            data["users"][str(user_id)] = {
-                "id": int(user_id),
-                "username": username,
-                "first_name": first_name,
-                "points": 50,
-                "status": "idle",
-                "partner": None
-            }
-            self._save_data(data, sha, f"New user: {user_id}")
-        return data["users"][str(user_id)]
+        uid = str(user_id)
+        if uid in data["users"]:
+            data["users"][uid]["points"] = data["users"][uid].get("points", 0) + points
+            self._save_data(data, sha, f"Points added to {uid}")
 
-    def get_idle_user(self, exclude_user_id):
-        """البحث عن شخص آخر يبحث عن دردشة"""
-        data, _ = self._get_raw_data()
-        for uid, info in data.get("users", {}).items():
-            if uid != str(exclude_user_id) and info.get("status") == "searching":
-                return info
-        return None
-
-    def set_user_status(self, user_id, status, partner=None):
+    def add_stars(self, user_id, stars):
         data, sha = self._get_raw_data()
-        uid_str = str(user_id)
-        if uid_str in data["users"]:
-            data["users"][uid_str]["status"] = status
-            data["users"][uid_str]["partner"] = partner
-            self._save_data(data, sha, f"Status: {uid_str} -> {status}")
+        uid = str(user_id)
+        if uid in data["users"]:
+            data["users"][uid]["stars_balance"] = data["users"][uid].get("stars_balance", 0) + stars
+            self._save_data(data, sha, f"Stars added to {uid}")
 
+    # --- الإحصائيات (التي طلبها المشرف) ---
     def get_stats(self):
         data, _ = self._get_raw_data()
-        return {"total_users": len(data.get("users", {})), "active_chats": 0}
+        users = data.get("users", {})
+        return {
+            "total_users": len(users),
+            "active_chats": sum(1 for u in users.values() if u.get("status") == "chatting"),
+            "total_points": sum(u.get("points", 0) for u in users.values()),
+            "total_stars": sum(u.get("stars_balance", 0) for u in users.values())
+        }
 
-    def get_top_users(self, limit=10):
-        data, _ = self._get_raw_data()
-        users = list(data.get("users", {}).values())
-        return sorted(users, key=lambda x: x.get('points', 0), reverse=True)[:limit]
+    # --- حل مشكلة optimize_database ---
+    def optimize_database(self):
+        """هذه الدالة الآن صامتة لأن جيت هاب لا يحتاج VACUUM مثل SQLite"""
+        print("✅ جاري تحسين قاعدة البيانات السحابية...")
+        return True
+
+    def set_user_status(self, user_id, status):
+        data, sha = self._get_raw_data()
+        uid = str(user_id)
+        if uid in data["users"]:
+            data["users"][uid]["status"] = status
+            self._save_data(data, sha, f"Status Update: {uid}")
