@@ -64,7 +64,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # تهيئة قواعد البيانات والنظم
-db = Database(DB_PATH)
+db = Database()
 game_manager = GameManager(db)
 stars_system = None  # سيتم تهيئتها بعد بناء التطبيق
 
