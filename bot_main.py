@@ -397,76 +397,72 @@ async def start_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # إذا كان هناك شخص في الانتظار
     if waiting_users:
-        partner = waiting_users.pop()
-        active_chats[uid] = partner
-        active_chats[partner] = uid
+        partner_id = waiting_users.pop(0)
+        uid = update.effective_user.id
         
-        # تحديث الحالة في قاعدة البيانات
-        db.set_user_status(uid, "chatting")
-        db.set_user_status(partner, "chatting")
+        # 1. تحديث الحالة في قاعدة البيانات السحابية (مهم جداً للربط)
+        db.set_user_status(uid, "chatting", partner_id)
+        db.set_user_status(partner_id, "chatting", uid)
         
-        # إنشاء محادثة في قاعدة البيانات
-        conv_id = db.create_conversation(uid, partner)
-        
-        # الحصول على معلومات الشريك
-        partner_info = db.get_user(partner)
-        partner_name = partner_info.get('first_name', 'شخص') if partner_info else 'شخص'
-        partner_gender = partner_info.get('gender', 'غير محدد') if partner_info else 'غير محدد'
-        partner_age = partner_info.get('age', '—') if partner_info else '—'
-        
-        partner_message = f"""
-🎉 **تم العثور على شريك!** 
-        # تجهيز بيانات الشريك للعرض بشكل جذاب
-        p_vip = "👑 ذهبي (VIP)" if partner_info.get('vip_until', 0) > time.time() else "👤 عضو عادي"
-        p_rating = partner_info.get('rating_sum', 0) / max(partner_info.get('total_ratings', 1), 1)
-        p_stars = "⭐" * int(p_rating) if p_rating > 0 else "جديد 🆕"
-        
-        text = (
-            f"🎉 **تم العثور على شريك جديد!**\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"👤 **معلومات الشريك:**\n"
-            f"• **الاسم:** {partner_info.get('first_name', 'مجهول')}\n"
-            f"• **الجنس:** {partner_info.get('gender', 'غير محدد')}\n"
-            f"• **العمر:** {partner_info.get('age', 'غير محدد')}\n"
-            f"• **الدولة:** {partner_info.get('country', 'غير محدد')} 🌍\n"
-            f"• **النقاط:** {partner_info.get('points', 0)} 💰\n"
-            f"• **التقييم:** {p_stars} ({round(p_rating, 1)})\n"
-            f"• **العضوية:** {p_vip}\n"
-            f"━━━━━━━━━━━━━━━\n\n"
-            f"💬 **يمكنك الآن البدء بالدردشة...**\n"
-            f"⚠️ استخدم /stop للإنهاء أو /report للتبليغ."
-        )
-
-
-💬 **يمكنك الآن البدء بالدردشة**
-استخدم /stop لإنهاء المحادثة
-"""
-        
-        await update.message.reply_text(partner_message, reply_markup=chat_control_keyboard())
-        
+        # 2. إنشاء محادثة (إذا كانت الدالة موجودة في database.py)
         try:
-            # إرسال معلومات للمستخدم الآخر
-            user_info = db.get_user(uid)
-            user_name = user_info.get('first_name', 'شخص') if user_info else 'شخص'
-            user_gender = user_info.get('gender', 'غير محدد') if user_info else 'غير محدد'
-            user_age = user_info.get('age', '—') if user_info else '—'
+            db.create_conversation(uid, partner_id)
+        except:
+            pass
+
+        # 3. دالة داخلية لتنسيق الرسالة بشكل جذاب (تمنع تكرار الكود)
+        def format_info_msg(user_data):
+            p_name = user_data.get('first_name', 'مجهول')
+            p_gender = user_data.get('gender', 'غير محدد')
+            p_age = user_data.get('age', 'غير محدد')
+            p_country = user_data.get('country', 'غير محدد')
+            p_points = user_data.get('points', 0)
             
-            user_message = f"""
-🎉 **تم العثور على شريك!** 
+            # معالجة VIP والتقييم
+            is_vip = "👑 ذهبي (VIP)" if user_data.get('vip_until', 0) > time.time() else "👤 عادي"
+            r_sum = user_data.get('rating_sum', 0)
+            r_total = user_data.get('total_ratings', 1)
+            p_rating = round(r_sum / max(r_total, 1), 1)
+            p_stars = "⭐" * int(p_rating) if p_rating > 0 else "جديد 🆕"
 
+            return (
+                f"🎉 **تم العثور على شريك جديد!**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **معلومات الشريك:**\n"
+                f"• **الاسم:** {p_name}\n"
+                f"• **الجنس:** {p_gender}\n"
+                f"• **العمر:** {p_age} سنة\n"
+                f"• **البلد:** {p_country} 🌍\n"
+                f"• **النقاط:** {p_points} 💰\n"
+                f"• **التقييم:** {p_stars} ({p_rating})\n"
+                f"• **العضوية:** {is_vip}\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"💬 **يمكنك الآن البدء بالدردشة مباشرة...**\n"
+                f"⚠️ استخدم /stop للإنهاء."
+            )
 
+        # 4. جلب معلومات الطرفين
+        current_user_info = db.get_user(uid)
+        partner_info = db.get_user(partner_id)
 
-💬 **يمكنك الآن البدء بالدردشة**
-استخدم /stop لإنهاء المحادثة
-"""
-            
+        # 5. إرسال الرسالة لك (تحتوي على معلومات الشريك)
+        await update.message.reply_text(
+            text=format_info_msg(partner_info),
+            parse_mode='Markdown',
+            reply_markup=chat_control_keyboard()
+        )
+        
+        # 6. إرسال الرسالة للشريك (تحتوي على معلوماتك أنت)
+        try:
             await context.bot.send_message(
-                chat_id=partner,
-                text=user_message,
+                chat_id=partner_id,
+                text=format_info_msg(current_user_info),
+                parse_mode='Markdown',
                 reply_markup=chat_control_keyboard()
             )
         except Exception as e:
             logger.error(f"Error sending message to partner: {e}")
+
             # تنظيف المحادثة
             if uid in active_chats:
                 del active_chats[uid]
