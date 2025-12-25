@@ -19,37 +19,45 @@ class Database:
         }
 
     def _get_raw_data(self):
-        """جلب كل البيانات من مستودع SQL_Chat"""
+        """جلب البيانات والـ SHA من جيت هاب"""
         try:
             response = requests.get(self.url, headers=self.headers, timeout=15)
             if response.status_code == 200:
                 content = response.json()
                 decoded_data = base64.b64decode(content['content']).decode('utf-8')
                 return json.loads(decoded_data), content['sha']
-            return {"users": {}, "stats": {"total_chats": 0}}, None
+            # إذا كان الملف غير موجود أو هناك خطأ، ننشئ هيكل افتراضي
+            return {"users": {}, "stats": {"total_chats": 0, "daily_new_users": 0}}, None
         except Exception as e:
-            logger.error(f"خطأ في جلب البيانات: {e}")
+            logger.error(f"❌ خطأ في جلب البيانات: {e}")
             return {"users": {}, "stats": {"total_chats": 0}}, None
 
-    def _save_data(self, data, sha, message="Bot Update"):
-        """حفظ التعديلات في المستودع"""
+    def _save_data(self, data, sha, message="Database update"):
+        """حفظ البيانات (Commit)"""
         try:
             updated_json = json.dumps(data, indent=4, ensure_ascii=False)
             encoded_content = base64.b64encode(updated_json.encode('utf-8')).decode('utf-8')
-            payload = {"message": message, "content": encoded_content, "sha": sha}
+            payload = {"message": message, "content": encoded_content}
+            if sha: payload["sha"] = sha
+            
             res = requests.put(self.url, headers=self.headers, json=payload, timeout=15)
             return res.status_code in [200, 201]
         except Exception as e:
-            logger.error(f"خطأ في الحفظ: {e}")
+            logger.error(f"❌ فشل الحفظ في جيت هاب: {e}")
             return False
 
     # --- إدارة المستخدمين ---
+    def get_user(self, user_id):
+        data, _ = self._get_raw_data()
+        return data.get("users", {}).get(str(user_id))
+
     def create_user(self, info):
+        """تسجيل المستخدم بكافة الحقول المطلوبة للبوت"""
         data, sha = self._get_raw_data()
-        user_id = str(info.get("user_id"))
-        if user_id not in data["users"]:
-            data["users"][user_id] = {
-                "user_id": int(user_id),
+        uid = str(info.get("user_id"))
+        if uid not in data["users"]:
+            data["users"][uid] = {
+                "user_id": int(uid),
                 "username": info.get("username", ""),
                 "first_name": info.get("first_name", ""),
                 "points": 50,
@@ -58,27 +66,22 @@ class Database:
                 "partner": None,
                 "gender": "غير محدد",
                 "join_ts": int(time.time()),
+                "vip_until": 0,
                 "total_chats": 0,
-                "vip_until": 0
+                "referrals": 0
             }
-            self._save_data(data, sha, f"Register User: {user_id}")
-        return data["users"][user_id]
+            self._save_data(data, sha, f"New User: {uid}")
+        return data["users"][uid]
 
-    def get_user(self, user_id):
-        data, _ = self._get_raw_data()
-        return data.get("users", {}).get(str(user_id))
-
-    # --- نظام البحث العشوائي (المحرك الأساسي) ---
-    def find_available_partner(self, exclude_user_id):
-        """البحث عن شخص حالته 'searching'"""
+    # --- نظام البحث والدردشة ---
+    def find_available_partner(self, exclude_id):
         data, _ = self._get_raw_data()
         for uid, info in data["users"].items():
-            if uid != str(exclude_user_id) and info.get("status") == "searching":
+            if uid != str(exclude_id) and info.get("status") == "searching":
                 return info
         return None
 
     def set_user_status(self, user_id, status, partner=None):
-        """تحديث الحالة (idle, searching, chatting)"""
         data, sha = self._get_raw_data()
         uid = str(user_id)
         if uid in data["users"]:
@@ -86,34 +89,42 @@ class Database:
             data["users"][uid]["partner"] = partner
             if status == "chatting":
                 data["users"][uid]["total_chats"] = data["users"][uid].get("total_chats", 0) + 1
-            self._save_data(data, sha, f"Update Status: {uid} to {status}")
+            self._save_data(data, sha, f"Update status: {uid} to {status}")
 
-    # --- الإحصائيات ولوحة التحكم ---
+    # --- الإحصائيات (لحل مشكلة الـ 0) ---
     def get_stats(self):
         data, _ = self._get_raw_data()
-        users = data.get("users", {})
+        u = data.get("users", {})
         now = int(time.time())
         return {
-            "total_users": len(users),
-            "searching_users": sum(1 for u in users.values() if u.get("status") == "searching"),
-            "active_chats": sum(1 for u in users.values() if u.get("status") == "chatting") // 2,
-            "vip_users": sum(1 for u in users.values() if u.get("vip_until", 0) > now),
-            "total_points": sum(u.get("points", 0) for u in users.values()),
-            "male_users": sum(1 for u in users.values() if u.get("gender") == "ذكر"),
-            "female_users": sum(1 for u in users.values() if u.get("gender") == "أنثى")
+            "total_users": len(u),
+            "searching_users": sum(1 for v in u.values() if v.get("status") == "searching"),
+            "active_chats": sum(1 for v in u.values() if v.get("status") == "chatting") // 2,
+            "vip_users": sum(1 for v in u.values() if v.get("vip_until", 0) > now),
+            "male_users": sum(1 for v in u.values() if v.get("gender") == "ذكر"),
+            "female_users": sum(1 for v in u.values() if v.get("gender") == "أنثى"),
+            "total_points": sum(v.get("points", 0) for v in u.values())
         }
 
-    # --- دوال إضافية لمنع أخطاء البوت القديم ---
+    # --- دوال العمليات المالية والنقاط ---
     def add_points(self, user_id, points):
         data, sha = self._get_raw_data()
         uid = str(user_id)
         if uid in data["users"]:
             data["users"][uid]["points"] = data["users"][uid].get("points", 0) + points
-            self._save_data(data, sha, f"Add points to {uid}")
+            self._save_data(data, sha, f"Add points: {uid}")
 
-    def optimize_database(self): return True
-    def get_leaderboard(self, limit=10):
+    def add_stars(self, user_id, stars):
+        data, sha = self._get_raw_data()
+        uid = str(user_id)
+        if uid in data["users"]:
+            data["users"][uid]["stars_balance"] = data["users"][uid].get("stars_balance", 0) + stars
+            self._save_data(data, sha, f"Add stars: {uid}")
+
+    def get_top_users(self, limit=10):
         data, _ = self._get_raw_data()
-        users = list(data.get("users", {}).values())
-        return sorted(users, key=lambda x: x.get('points', 0), reverse=True)[:limit]
- 
+        users_list = list(data.get("users", {}).values())
+        return sorted(users_list, key=lambda x: x.get('points', 0), reverse=True)[:limit]
+
+    def optimize_database(self):
+        return True # لا نحتاجها في JSON ولكن نتركها لكي لا ينهار bot_main
