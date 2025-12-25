@@ -414,38 +414,43 @@ async def start_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partner_gender = partner_info.get('gender', 'غير محدد') if partner_info else 'غير محدد'
         partner_age = partner_info.get('age', '—') if partner_info else '—'
         
-        partner_message = f"""
-🎉 **تم العثور على شريك!** 
 
-👤 **معلومات الشريك:**
-• **اسم شريكك:** {partner_name}
-• **الجنس:** {partner_gender}
-• **العمر:** {partner_age}
-
-💬 **يمكنك الآن البدء بالدردشة**
-استخدم /stop لإنهاء المحادثة
-"""
         
         await update.message.reply_text(partner_message, reply_markup=chat_control_keyboard())
         
         try:
             # إرسال معلومات للمستخدم الآخر
-            user_info = db.get_user(uid)
-            user_name = user_info.get('first_name', 'شخص') if user_info else 'شخص'
-            user_gender = user_info.get('gender', 'غير محدد') if user_info else 'غير محدد'
-            user_age = user_info.get('age', '—') if user_info else '—'
+                        # --- جلب وتجهيز بيانات الشريك للعرض الاحترافي ---
+            p_info = db.get_user(uid)
+            p_name = p_info.get('first_name', 'مجهول')
+            p_gender = p_info.get('gender', 'غير محدد')
+            p_age = p_info.get('age', '—')
+            p_country = p_info.get('country', 'غير محدد')
+            p_points = p_info.get('points', 0)
             
-            user_message = f"""
-🎉 **تم العثور على شريك!** 
+            # حساب التقييم والنجوم بلمسة جمالية
+            p_rating = p_info.get('avg_rating', 0)
+            p_stars = "⭐" * int(p_rating) if p_rating > 0 else "جديد 🆕"
+            
+            # تحديد نوع العضوية
+            p_vip = "👑 عضوية ذهبية (VIP)" if p_info.get('vip_until', 0) > time.time() else "👤 عضوية عادية"
 
-👤 **معلومات الشريك:**
-• **الاسم:** {user_name}
-• **الجنس:** {user_gender}
-• **العمر:** {user_age}
+            user_message = (
+                f"🎉 **تم العثور على شريك جديد!**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **معلومات الشريك:**\n"
+                f"• **الاسم:** {p_name}\n"
+                f"• **الجنس:** {p_gender}\n"
+                f"• **العمر:** {p_age} سنة\n"
+                f"• **البلد:** {p_country} 🌍\n"
+                f"• **النقاط:** {p_points} 💰\n"
+                f"• **التقييم:** {p_stars} ({p_rating})\n"
+                f"• **العضوية:** {p_vip}\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"💬 **يمكنك الآن البدء بالدردشة مباشرة...**\n"
+                f"⚠️ استخدم /stop للإنهاء أو /report للتبليغ."
+            )
 
-💬 **يمكنك الآن البدء بالدردشة**
-استخدم /stop لإنهاء المحادثة
-"""
             
             await context.bot.send_message(
                 chat_id=partner,
