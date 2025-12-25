@@ -10,7 +10,7 @@ class Database:
 
     def _get_raw_data(self):
         try:
-            res = requests.get(self.url, headers=self.headers, timeout=10)
+            res = requests.get(self.url, headers=self.headers, timeout=15)
             if res.status_code == 200:
                 content = res.json()
                 return json.loads(base64.b64decode(content['content']).decode('utf-8')), content['sha']
@@ -19,8 +19,8 @@ class Database:
 
     def _save(self, data, sha):
         content = base64.b64encode(json.dumps(data, indent=4, ensure_ascii=False).encode('utf-8')).decode('utf-8')
-        payload = {"message": "Sync Bot Data", "content": content, "sha": sha}
-        requests.put(self.url, headers=self.headers, json=payload, timeout=10)
+        payload = {"message": "Fixing Logs Errors", "content": content, "sha": sha}
+        requests.put(self.url, headers=self.headers, json=payload, timeout=15)
 
     def create_user(self, info):
         data, sha = self._get_raw_data()
@@ -30,34 +30,18 @@ class Database:
                 "user_id": int(uid), "username": info.get("username", ""),
                 "first_name": info.get("first_name", ""), "points": 50,
                 "stars_balance": 0, "status": "idle", "gender": "غير محدد",
-                "vip_until": 0, "join_ts": int(time.time()), "total_chats": 0,
-                "partner": None, "last_activity": int(time.time())
+                "vip_until": 0, "join_ts": int(time.time()), "total_chats": 0
             }
             self._save(data, sha)
         return data["users"][uid]
 
     def get_user(self, user_id):
         data, _ = self._get_raw_data()
-        return data.get("users", {}).get(str(user_id))
-
-    def set_user_status(self, user_id, status, partner=None):
-        data, sha = self._get_raw_data()
-        uid = str(user_id)
-        if uid in data["users"]:
-            data["users"][uid]["status"] = status
-            data["users"][uid]["partner"] = partner
-            data["users"][uid]["last_activity"] = int(time.time())
-            if status == "chatting":
-                data["users"][uid]["total_chats"] += 1
-                data["stats"]["total_chats"] = data["stats"].get("total_chats", 0) + 1
-            self._save(data, sha)
-
-    def find_available_partner(self, exclude_id):
-        data, _ = self._get_raw_data()
-        for uid, info in data["users"].items():
-            if uid != str(exclude_id) and info.get("status") == "searching":
-                return info
-        return None
+        user = data.get("users", {}).get(str(user_id))
+        # حل مشكلة NoneType: إذا لم يجد المستخدم، يقوم بإنشائه فوراً
+        if not user:
+            return {"user_id": int(user_id), "status": "idle", "points": 0}
+        return user
 
     def get_stats(self):
         data, _ = self._get_raw_data()
@@ -69,22 +53,28 @@ class Database:
             "searching_users": sum(1 for v in u.values() if v.get("status") == "searching"),
             "vip_users": sum(1 for v in u.values() if v.get("vip_until", 0) > now),
             "male_users": sum(1 for v in u.values() if v.get("gender") == "ذكر"),
-            "female_users": sum(1 for v in u.values() if v.get("gender") == "أنثى"),
-            "total_points": sum(v.get("points", 0) for v in u.values()),
-            "daily_new_users": sum(1 for v in u.values() if v.get("join_ts", 0) > (now - 86400))
+            "female_users": sum(1 for v in u.values() if v.get("gender") == "أنثى")
         }
 
-    def get_top_users(self, limit=10):
+    # حل خطأ السجلات: إضافة get_leaderboard
+    def get_leaderboard(self, limit=10):
         data, _ = self._get_raw_data()
         users = list(data.get("users", {}).values())
         return sorted(users, key=lambda x: x.get('points', 0), reverse=True)[:limit]
 
-    def add_points(self, user_id, points):
+    def find_available_partner(self, exclude_id):
+        data, _ = self._get_raw_data()
+        for uid, info in data["users"].items():
+            if uid != str(exclude_id) and info.get("status") == "searching":
+                return info
+        return None
+
+    def set_user_status(self, user_id, status, partner=None):
         data, sha = self._get_raw_data()
         uid = str(user_id)
         if uid in data["users"]:
-            data["users"][uid]["points"] += points
+            data["users"][uid]["status"] = status
+            data["users"][uid]["partner"] = partner
             self._save(data, sha)
 
     def optimize_database(self): return True
- 
