@@ -5,7 +5,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# هذا الجزء يمنع تشغيل أكثر من نسخة للبوت في نفس الوقت (حل مشكلة Conflict)
 concurrency:
   group: telegram-bot-group
   cancel-in-progress: true
@@ -26,14 +25,20 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install python-telegram-bot requests certifi dnspython
-          # أضف أي مكتبات أخرى يحتاجها بوتك هنا
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install python-telegram-bot requests certifi dnspython || true
+
+      - name: Validate Secrets
+        run: |
+          : "${BOT_TOKEN:?Error: BOT_TOKEN not set}"
+          : "${GH_TOKEN:?Error: GH_TOKEN not set}"
+          : "${DATA_REPO:?Error: DATA_REPO not set}"
+          : "${DB_FILE:?Error: DB_FILE not set}"
 
       - name: Run Telegram Bot
         env:
-          # تأكد من أن الأسماء هنا تطابق الأسماء في Secrets
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           DATA_REPO: ${{ secrets.DATA_REPO }}
           DB_FILE: ${{ secrets.DB_FILE }}
-        run: python bot_main.py
+        run: python bot_main.py 
