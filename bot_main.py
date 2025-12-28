@@ -6,7 +6,12 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+from github_database import get_database
 
+# ثم استخدام:
+db = get_database()
+
+# جميع الدوال ستعمل بنفس الطر
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, LabeledPrice
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler, PreCheckoutQueryHandler
 from telegram.error import TelegramError
